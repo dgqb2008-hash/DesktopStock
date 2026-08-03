@@ -32,13 +32,12 @@
 ## 📷 程序界面
 
 
-
-```markdown
 <div align="center">
+
 ![图片描述](img/1.png)
 ![图片描述](img/2.png)
+
 </div>
-```
 
 ## 🚀 快速开始
 
