@@ -31,13 +31,13 @@
 
 ## 📷 程序界面
 
-> 截图占位:可在此放入程序主界面与走势图窗口的截图。
-> 推荐截图保存为 `docs/main.png`、`docs/chart.png`,然后替换下方内容:
+
 
 ```markdown
-
+<div align="center">
 ![图片描述](img/1.png)
 ![图片描述](img/2.png)
+</div>
 ```
 
 ## 🚀 快速开始
