@@ -12,8 +12,6 @@
 ![Language](https://img.shields.io/badge/language-C%23-239120)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-![图片描述](img/1.png)
-![图片描述](img/2.png)
 </div>
 
 
@@ -37,8 +35,9 @@
 > 推荐截图保存为 `docs/main.png`、`docs/chart.png`,然后替换下方内容:
 
 ```markdown
-![主界面](docs/main.png)
-![分时走势](docs/chart.png)
+
+![图片描述](img/1.png)
+![图片描述](img/2.png)
 ```
 
 ## 🚀 快速开始
