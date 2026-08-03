@@ -1,0 +1,12 @@
+C:\Users\Administrator\Desktop\桌面股市\DesktopStock\bin\Release\DesktopStock.exe
+c:\Users\Administrator\Desktop\桌面股市\DesktopStock\bin\Release\DesktopStock.exe.config
+c:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Release\DesktopStock.csprojResolveAssemblyReference.cache
+c:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Release\DesktopStock.Properties.Resources.resources
+c:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Release\DesktopStock.csproj.GenerateResource.Cache
+c:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Release\DesktopStock.exe
+c:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Release\DesktopStock.pdb
+c:\Users\Administrator\Desktop\桌面股市\DesktopStock\bin\Release\DesktopStock.pdb
+C:\Users\Administrator\Desktop\桌面股市\DesktopStock\bin\Release\DesktopStock.exe.manifest
+C:\Users\Administrator\Desktop\桌面股市\DesktopStock\bin\Release\DesktopStock.application
+C:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Release\DesktopStock.exe.manifest
+C:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Release\DesktopStock.application

@@ -1,0 +1,3 @@
+MainForm.cs(571,13): warning CS4014: Because this call is not awaited, execution of the current method continues before the call is completed. Consider applying the 'await' operator to the result of the call. [C:\Users\Administrator\Desktop\桌面股市\DesktopStock\DesktopStock.csproj]
+StockItemPanel.cs(27,22): warning CS0414: The field 'StockItemPanel.isFlashing' is assigned but its value is never used [C:\Users\Administrator\Desktop\桌面股市\DesktopStock\DesktopStock.csproj]
+  DesktopStock -> C:\Users\Administrator\Desktop\桌面股市\DesktopStock\bin\Release\DesktopStock.exe
