@@ -23,6 +23,10 @@ namespace DesktopStock
         private Label lblStatus;
         private Panel stockListPanel;
         private Label lblEmptyHint;
+        private NotifyIcon trayIcon;
+        private ContextMenuStrip trayMenu;
+        private ToolStripMenuItem miShow;
+        private ToolStripMenuItem miExit;
 
         // ---- 数据 ----
         private Timer refreshTimer;
@@ -31,6 +35,12 @@ namespace DesktopStock
         private List<StockItemPanel> stockPanels = new List<StockItemPanel>();
         private bool isRefreshing = false;
         private bool moveResizePending = false;
+        // 标记是否真正退出程序（由托盘“退出”菜单触发），否则关闭按钮只是隐藏到托盘
+        private bool exitApp = false;
+        // 隐藏到托盘前的窗口位置和大小（仅 Normal 状态记录），用于恢复时还原
+        private Point hiddenLocation;
+        private Size hiddenSize;
+        private bool hasHiddenState = false;
 
         // ---- 常量 ----
         private const int TOOLBAR_HEIGHT = 26;
@@ -46,6 +56,8 @@ namespace DesktopStock
             this.FormBorderStyle = FormBorderStyle.Sizable;
             this.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Windows.Forms.Application.ExecutablePath);
             this.DoubleBuffered = true;
+            // 不在任务栏显示图标，驻留系统托盘
+            this.ShowInTaskbar = false;
 
             // 窗口拖拽/缩放时延迟保存（300ms防抖）
             saveDebounceTimer = new Timer { Interval = 300 };
@@ -63,6 +75,12 @@ namespace DesktopStock
             this.ResizeEnd += (s, e) =>
             {
                 this.ResumeLayout(true);
+                if (this.WindowState == FormWindowState.Normal)
+                {
+                    hiddenLocation = this.Location;
+                    hiddenSize = this.Size;
+                    hasHiddenState = true;
+                }
                 moveResizePending = true;
                 saveDebounceTimer.Stop();
                 saveDebounceTimer.Start();
@@ -71,6 +89,9 @@ namespace DesktopStock
             {
                 if (this.WindowState == FormWindowState.Normal)
                 {
+                    hiddenLocation = this.Location;
+                    hiddenSize = this.Size;
+                    hasHiddenState = true;
                     moveResizePending = true;
                     saveDebounceTimer.Stop();
                     saveDebounceTimer.Start();
@@ -78,11 +99,13 @@ namespace DesktopStock
             };
 
             InitializeCustomComponents();
+            InitializeTrayIcon();
             LoadAndApplySettings();
             StartRefreshTimer();
 
             this.FormClosing += MainForm_FormClosing;
             this.FormClosed += MainForm_FormClosed;
+            this.Resize += MainForm_Resize;
         }
 
         #region 初始化界面
@@ -320,6 +343,74 @@ namespace DesktopStock
             }
         }
 
+        /// <summary>
+        /// 初始化系统托盘图标及右键菜单
+        /// </summary>
+        private void InitializeTrayIcon()
+        {
+            // 右键菜单
+            trayMenu = new ContextMenuStrip();
+            trayMenu.RenderMode = ToolStripRenderMode.System;
+
+            miShow = new ToolStripMenuItem("显示主窗口");
+            miShow.Click += (s, e) => ShowMainWindow();
+            trayMenu.Items.Add(miShow);
+
+            trayMenu.Items.Add(new ToolStripSeparator());
+
+            miExit = new ToolStripMenuItem("退出");
+            miExit.Click += (s, e) =>
+            {
+                exitApp = true;
+                this.Close();
+            };
+            trayMenu.Items.Add(miExit);
+
+            // 托盘图标
+            trayIcon = new NotifyIcon
+            {
+                Icon = this.Icon,
+                Text = "桌面股市",
+                Visible = true,
+                ContextMenuStrip = trayMenu
+            };
+            trayIcon.DoubleClick += (s, e) => ShowMainWindow();
+            trayIcon.MouseClick += (s, e) =>
+            {
+                // 左键单击也显示主窗口
+                if (e.Button == MouseButtons.Left)
+                {
+                    ShowMainWindow();
+                }
+            };
+        }
+
+        /// <summary>
+        /// 显示主窗口并置于前台
+        /// </summary>
+        private void ShowMainWindow()
+        {
+            if (this.WindowState == FormWindowState.Minimized)
+            {
+                this.WindowState = FormWindowState.Normal;
+            }
+            // 显式还原隐藏前的位置和大小（ShowInTaskbar=false 时句柄可能被重建导致位置丢失）
+            if (hasHiddenState)
+            {
+                this.Location = hiddenLocation;
+                this.Size = hiddenSize;
+            }
+            this.Show();
+            this.Activate();
+            this.BringToFront();
+            // 重新设为 TopMost 可保持之前的置顶状态
+            if (settings != null && settings.TopMost)
+            {
+                this.TopMost = false;
+                this.TopMost = true;
+            }
+        }
+
         #endregion
 
         #region 设置加载与保存
@@ -374,6 +465,11 @@ namespace DesktopStock
 
             UpdateEmptyHint();
             PerformLayout();
+
+            // 初始化托盘恢复用的位置/大小记录，避免启动后未移动即隐藏时丢失位置
+            hiddenLocation = this.Location;
+            hiddenSize = this.Size;
+            hasHiddenState = true;
         }
 
         private void SaveSettings()
@@ -564,14 +660,48 @@ namespace DesktopStock
         {
             // 关闭前立即保存（停止防抖定时器，直接写盘）
             moveResizePending = false;
-            saveDebounceTimer?.Stop();
+            if (saveDebounceTimer != null) saveDebounceTimer.Stop();
             SaveSettings();
-            refreshTimer?.Stop();
+
+            // 非用户主动“退出”时，仅隐藏到托盘而不结束程序
+            if (!exitApp && e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                this.Hide();
+                if (trayIcon != null)
+                {
+                    trayIcon.ShowBalloonTip(2000, "桌面股市", "程序已最小化到托盘，双击图标可恢复窗口。", ToolTipIcon.Info);
+                }
+                return;
+            }
+
+            // 真正退出：停止定时器
+            if (refreshTimer != null) refreshTimer.Stop();
         }
 
         private void MainForm_FormClosed(object sender, FormClosedEventArgs e)
         {
-            saveDebounceTimer?.Dispose();
+            // 释放托盘图标，避免残留
+            if (trayIcon != null)
+            {
+                trayIcon.Visible = false;
+                trayIcon.Dispose();
+                trayIcon = null;
+            }
+            if (saveDebounceTimer != null) saveDebounceTimer.Dispose();
+        }
+
+        private void MainForm_Resize(object sender, EventArgs e)
+        {
+            // 最小化时隐藏窗口，驻留托盘
+            if (this.WindowState == FormWindowState.Minimized)
+            {
+                this.Hide();
+                if (trayIcon != null)
+                {
+                    trayIcon.ShowBalloonTip(2000, "桌面股市", "程序已最小化到托盘，双击图标可恢复窗口。", ToolTipIcon.Info);
+                }
+            }
         }
 
         private void StockListPanel_SizeChanged(object sender, EventArgs e)
