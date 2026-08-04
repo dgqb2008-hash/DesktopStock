@@ -102,34 +102,94 @@ namespace DesktopStock
             this.Invalidate();
         }
 
+        /// <summary>
+        /// 将X坐标转换为上午交易时间
+        /// </summary>
+        private DateTime XToMorningTime(float x, int startX, int width)
+        {
+            const int morningStartMinutes = 9 * 60 + 30;  // 570
+            const int morningEndMinutes = 11 * 60 + 30;   // 690
+
+            float ratio = (x - startX) / width;
+            if (ratio < 0) ratio = 0;
+            if (ratio > 1) ratio = 1;
+
+            int minutes = morningStartMinutes + (int)(ratio * (morningEndMinutes - morningStartMinutes));
+            return DateTime.Today.AddMinutes(minutes);
+        }
+
+        /// <summary>
+        /// 将X坐标转换为下午交易时间
+        /// </summary>
+        private DateTime XToAfternoonTime(float x, int startX, int width)
+        {
+            const int afternoonStartMinutes = 13 * 60;    // 780
+            const int afternoonEndMinutes = 15 * 60;      // 900
+
+            float ratio = (x - startX) / width;
+            if (ratio < 0) ratio = 0;
+            if (ratio > 1) ratio = 1;
+
+            int minutes = afternoonStartMinutes + (int)(ratio * (afternoonEndMinutes - afternoonStartMinutes));
+            return DateTime.Today.AddMinutes(minutes);
+        }
+
+        /// <summary>
+        /// 在数据点中找到最接近指定时间的点的索引
+        /// </summary>
+        private int FindNearestPointIndex(List<TrendPoint> pts, DateTime targetTime)
+        {
+            int nearestIdx = 0;
+            long minDiff = long.MaxValue;
+
+            for (int i = 0; i < pts.Count; i++)
+            {
+                long diff = Math.Abs((pts[i].Time - targetTime).Ticks);
+                if (diff < minDiff)
+                {
+                    minDiff = diff;
+                    nearestIdx = i;
+                }
+            }
+            return nearestIdx;
+        }
+
         private void CalcCrossIndex(Point mousePt)
         {
             int totalCount = _points.Count;
             if (totalCount == 0) return;
 
             int chartW = _chartRect.Width;
-            int x = mousePt.X - _chartRect.X;
-
-            // 上午/下午各占一半宽度
             int halfW = chartW / 2;
-            int idx;
+            
+            // 计算鼠标相对于图表左边界的位置
+            int x = mousePt.X - _chartRect.Left;
+
             if (x <= halfW && _morningPoints.Count > 0)
             {
-                idx = (int)((float)x / halfW * _morningPoints.Count);
-                if (idx >= _morningPoints.Count) idx = _morningPoints.Count - 1;
-                if (idx < 0) idx = 0;
+                // 上午区域：反推时间，找最近点
+                // 注意: MorningTimeToX 的 startX 参数已经是图表左边界
+                DateTime targetTime = XToMorningTime(x, _chartRect.Left, halfW);
+                int idx = FindNearestPointIndex(_morningPoints, targetTime);
                 var pt = _morningPoints[idx];
                 _crossIdx = _points.IndexOf(pt);
             }
-            else if (_afternoonPoints.Count > 0)
+            else if (x > halfW && _afternoonPoints.Count > 0)
             {
-                int x2 = x - halfW;
-                // 下午实际占 halfW (扣除中午休息视觉)
-                idx = (int)((float)x2 / halfW * _afternoonPoints.Count);
-                if (idx >= _afternoonPoints.Count) idx = _afternoonPoints.Count - 1;
-                if (idx < 0) idx = 0;
+                // 下午区域：反推时间，找最近点
+                // 注意: AfternoonTimeToX 的 startX 参数是下午区域的起始位置
+                // 这里需要计算鼠标相对于下午区域起始位置的偏移
+                int afternoonStartX = _chartRect.Left + halfW;
+                int afternoonX = mousePt.X - afternoonStartX;
+                DateTime targetTime = XToAfternoonTime(afternoonX, 0, halfW);
+                int idx = FindNearestPointIndex(_afternoonPoints, targetTime);
                 var pt = _afternoonPoints[idx];
                 _crossIdx = _points.IndexOf(pt);
+            }
+            else
+            {
+                // 没有对应数据时，不显示十字光标
+                _crossIdx = -1;
             }
         }
 
@@ -289,15 +349,15 @@ namespace DesktopStock
             var rect = _chartRect;
             int halfW = rect.Width / 2;
 
-            // 上午线
+            // 上午线 (isMorning = true)
             if (_morningPoints.Count > 1)
             {
-                DrawSmoothLine(g, _morningPoints, rect.Left, halfW, GetPriceColor());
+                DrawSmoothLine(g, _morningPoints, rect.Left, halfW, GetPriceColor(), true);
             }
-            // 下午线
+            // 下午线 (isMorning = false)
             if (_afternoonPoints.Count > 1)
             {
-                DrawSmoothLine(g, _afternoonPoints, rect.Left + halfW, halfW, GetPriceColor());
+                DrawSmoothLine(g, _afternoonPoints, rect.Left + halfW, halfW, GetPriceColor(), false);
             }
         }
 
@@ -307,34 +367,77 @@ namespace DesktopStock
             int halfW = rect.Width / 2;
             var pen = new Pen(Color.FromArgb(255, 170, 50), 1);
 
-            // 上午均价
+            // 上午均价 (isMorning = true)
             if (_morningPoints.Count > 1)
             {
-                DrawAvgLine(g, _morningPoints, rect.Left, halfW, pen);
+                DrawAvgLine(g, _morningPoints, rect.Left, halfW, pen, true);
             }
-            // 下午均价
+            // 下午均价 (isMorning = false)
             if (_afternoonPoints.Count > 1)
             {
-                DrawAvgLine(g, _afternoonPoints, rect.Left + halfW, halfW, pen);
+                DrawAvgLine(g, _afternoonPoints, rect.Left + halfW, halfW, pen, false);
             }
             pen.Dispose();
         }
 
-        private void DrawSmoothLine(Graphics g, List<TrendPoint> pts, int startX, int width, Color color)
+        /// <summary>
+        /// 将上午交易时间(9:30-11:30)转换为X坐标（左半边）
+        /// </summary>
+        private float MorningTimeToX(DateTime time, int startX, int width)
+        {
+            // 上午交易时长: 9:30到11:30 = 120分钟
+            const int morningStartMinutes = 9 * 60 + 30;  // 570
+            const int morningEndMinutes = 11 * 60 + 30;   // 690
+            int timeMinutes = time.Hour * 60 + time.Minute;
+
+            if (timeMinutes <= morningStartMinutes) return startX;
+            if (timeMinutes >= morningEndMinutes) return startX + width;
+
+            float ratio = (float)(timeMinutes - morningStartMinutes) / (morningEndMinutes - morningStartMinutes);
+            return startX + ratio * width;
+        }
+
+        /// <summary>
+        /// 将下午交易时间(13:00-15:00)转换为X坐标（右半边）
+        /// </summary>
+        private float AfternoonTimeToX(DateTime time, int startX, int width)
+        {
+            // 下午交易时长: 13:00到15:00 = 120分钟
+            const int afternoonStartMinutes = 13 * 60;    // 780
+            const int afternoonEndMinutes = 15 * 60;      // 900
+            int timeMinutes = time.Hour * 60 + time.Minute;
+
+            if (timeMinutes <= afternoonStartMinutes) return startX;
+            if (timeMinutes >= afternoonEndMinutes) return startX + width;
+
+            float ratio = (float)(timeMinutes - afternoonStartMinutes) / (afternoonEndMinutes - afternoonStartMinutes);
+            return startX + ratio * width;
+        }
+
+        private void DrawSmoothLine(Graphics g, List<TrendPoint> pts, int startX, int width, Color color, bool isMorning)
         {
             if (pts.Count < 2) return;
             using (var pen = new Pen(color, 1.2f))
             {
                 var path = new GraphicsPath();
-                float stepX = (float)width / pts.Count;
-                int stepCount = Math.Max(pts.Count - 1, 1);
 
                 for (int i = 0; i < pts.Count; i++)
                 {
-                    float x = startX + stepX * i;
+                    float x = isMorning
+                        ? MorningTimeToX(pts[i].Time, startX, width)
+                        : AfternoonTimeToX(pts[i].Time, startX, width);
                     float y = PriceToY(pts[i].Price);
+
                     if (i == 0) path.StartFigure();
-                    else path.AddLine(startX + stepX * (i - 1), PriceToY(pts[i - 1].Price), x, y);
+                    else
+                    {
+                        float prevX = isMorning
+                            ? MorningTimeToX(pts[i - 1].Time, startX, width)
+                            : AfternoonTimeToX(pts[i - 1].Time, startX, width);
+                        float prevY = PriceToY(pts[i - 1].Price);
+                        path.AddLine(prevX, prevY, x, y);
+                    }
+
                     // 终点小圆点
                     if (i == pts.Count - 1)
                     {
@@ -347,15 +450,18 @@ namespace DesktopStock
             }
         }
 
-        private void DrawAvgLine(Graphics g, List<TrendPoint> pts, int startX, int width, Pen pen)
+        private void DrawAvgLine(Graphics g, List<TrendPoint> pts, int startX, int width, Pen pen, bool isMorning)
         {
             if (pts.Count < 2) return;
-            float stepX = (float)width / pts.Count;
             for (int i = 1; i < pts.Count; i++)
             {
-                float x1 = startX + stepX * (i - 1);
+                float x1 = isMorning
+                    ? MorningTimeToX(pts[i - 1].Time, startX, width)
+                    : AfternoonTimeToX(pts[i - 1].Time, startX, width);
                 float y1 = PriceToY(pts[i - 1].AvgPrice);
-                float x2 = startX + stepX * i;
+                float x2 = isMorning
+                    ? MorningTimeToX(pts[i].Time, startX, width)
+                    : AfternoonTimeToX(pts[i].Time, startX, width);
                 float y2 = PriceToY(pts[i].AvgPrice);
                 g.DrawLine(pen, x1, y1, x2, y2);
             }
@@ -406,20 +512,18 @@ namespace DesktopStock
 
             var pt = _points[_crossIdx];
 
-            // 找到该点的X位置
+            // 使用时间比例计算该点的X位置
             int halfW = rect.Width / 2;
-            int x;
-            if (pt.Time.Hour < 12 && _morningPoints.Count > 0)
+            float x;
+            bool isMorning = pt.Time.Hour < 12;
+
+            if (isMorning && _morningPoints.Count > 0)
             {
-                int idx = _morningPoints.IndexOf(pt);
-                if (idx < 0) return;
-                x = rect.Left + (int)((float)idx / _morningPoints.Count * halfW);
+                x = MorningTimeToX(pt.Time, rect.Left, halfW);
             }
-            else if (_afternoonPoints.Count > 0)
+            else if (!isMorning && _afternoonPoints.Count > 0)
             {
-                int idx = _afternoonPoints.IndexOf(pt);
-                if (idx < 0) return;
-                x = rect.Left + halfW + (int)((float)idx / _afternoonPoints.Count * halfW);
+                x = AfternoonTimeToX(pt.Time, rect.Left + halfW, halfW);
             }
             else return;
 
@@ -440,8 +544,8 @@ namespace DesktopStock
                 _prevClose > 0 ? (pt.Price - _prevClose) / _prevClose * 100 : 0);
 
             var sz = g.MeasureString(info, _axisFont);
-            int boxX = x + 8;
-            if (boxX + sz.Width + 8 > rect.Right) boxX = x - (int)sz.Width - 16;
+            int boxX = (int)x + 8;
+            if (boxX + sz.Width + 8 > rect.Right) boxX = (int)x - (int)sz.Width - 16;
 
             using (var brush = new SolidBrush(Color.FromArgb(220, 40, 40, 40)))
             using (var fb = new SolidBrush(Color.White))
