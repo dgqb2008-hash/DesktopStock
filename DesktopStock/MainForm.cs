@@ -60,8 +60,10 @@ namespace DesktopStock
 
         // ---- 常量 ----
         private const int TOOLBAR_HEIGHT = 26;
-        private const int MIN_FORM_WIDTH = 660;
-        private const int MIN_FORM_HEIGHT = 280;
+        // 取消过大的最小宽度限制，允许窗口自由缩窄；
+        // 工具栏统计标签会按优先级自动隐藏，避免控件重叠。
+        private const int MIN_FORM_WIDTH = 240;
+        private const int MIN_FORM_HEIGHT = 200;
 
         public MainForm()
         {
@@ -144,6 +146,7 @@ namespace DesktopStock
             toolPanel.Resize += (s, e) =>
             {
                 lblStatus.Location = new Point(toolPanel.ClientSize.Width - 48, 5);
+                AdjustToolbarVisibility();
             };
 
             // + 按钮（自绘图标：蓝色圆角方块+白色加号）
@@ -532,6 +535,29 @@ namespace DesktopStock
                 e.Graphics.DrawLine(pen, 0, TOOLBAR_HEIGHT - 1,
                     toolPanel.Width, TOOLBAR_HEIGHT - 1);
             }
+        }
+
+        /// <summary>
+        /// 窗口变窄时按优先级隐藏工具栏统计标签（从右到左），
+        /// 避免控件重叠。隐藏顺序：今盈 → 盈利 → 现额 → 成本。
+        /// 左侧输入区（代码/成本价/数量/+ /置顶/透明度）始终保留。
+        /// </summary>
+        private void AdjustToolbarVisibility()
+        {
+            if (toolPanel == null) return;
+            int w = toolPanel.ClientSize.Width;
+
+            // 状态标签固定占右侧 48px
+            const int rightReserved = 52;
+            int available = w - rightReserved;
+
+            // 各统计标签的右边界（绝对坐标）
+            // 今盈: 554+80=634, 盈利: 471+80=551, 现额: 388+80=468, 成本: 305+80=385
+            // 从右到左依次判断：右边界超出可用空间则隐藏
+            lblTotalDailyProfitAmt.Visible = available > 634;
+            lblTotalProfitAmt.Visible = available > 551;
+            lblCurrentTotal.Visible = available > 468;
+            lblTotalCost.Visible = available > 385;
         }
 
         /// <summary>
@@ -1035,7 +1061,26 @@ private void ShowMainWindow()
         {
             if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
             {
-                stockGridView.CurrentCell = stockGridView.Rows[e.RowIndex].Cells[0];
+                // 找到第一个可见列的单元格作为 CurrentCell，
+                // 避免设置到隐藏列抛出 "Current cell cannot be set to an invisible cell" 异常
+                DataGridViewCell firstVisibleCell = null;
+                foreach (DataGridViewColumn col in stockGridView.Columns)
+                {
+                    if (col.Visible)
+                    {
+                        firstVisibleCell = stockGridView.Rows[e.RowIndex].Cells[col.Index];
+                        break;
+                    }
+                }
+                if (firstVisibleCell != null)
+                {
+                    stockGridView.CurrentCell = firstVisibleCell;
+                }
+                else
+                {
+                    // 极端情况：所有列都隐藏，仅选中行
+                    stockGridView.Rows[e.RowIndex].Selected = true;
+                }
                 rowContextMenu.Show(stockGridView, stockGridView.PointToClient(Cursor.Position));
             }
         }
