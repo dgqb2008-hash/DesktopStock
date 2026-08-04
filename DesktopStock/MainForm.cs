@@ -1417,42 +1417,21 @@ private void ShowMainWindow()
         private void OpenChartWindow(string code)
         {
             string name = stockData.ContainsKey(code) && stockData[code].IsValid ? stockData[code].Name : code;
-            System.Threading.Tasks.Task.Run(() =>
+
+            // 立即打开窗口（默认K线模式），不等数据，避免双击卡顿
+            if (this.InvokeRequired)
             {
-                this.Invoke(new Action(() => lblStatus.Text = "加载走势..."));
-                try
+                this.BeginInvoke((Action)(() =>
                 {
-                    var trendData = StockService.FetchTrendSync(code, name);
-                    this.Invoke(new Action(() =>
-                    {
-                        if (trendData.IsValid)
-                        {
-                            var chartForm = new ChartForm(trendData);
-                            chartForm.Show(this);
-                        }
-                        else
-                        {
-                            MessageBox.Show(
-                                code + " 走势数据获取失败\r\n" + (trendData.ErrorMessage ?? ""),
-                                "走势图", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        }
-                    }));
-                }
-                catch (Exception ex)
-                {
-                    this.Invoke(new Action(() =>
-                        MessageBox.Show("走势图加载失败: " + ex.Message, "错误",
-                            MessageBoxButtons.OK, MessageBoxIcon.Error)));
-                }
-                finally
-                {
-                    this.Invoke(new Action(() =>
-                    {
-                        var now = DateTime.Now;
-                        lblStatus.Text = string.Format("{0}:{1:D2}", now.Hour, now.Minute);
-                    }));
-                }
-            });
+                    var chartForm = new ChartForm(code, name);
+                    chartForm.Show(this);
+                }));
+            }
+            else
+            {
+                var chartForm = new ChartForm(code, name);
+                chartForm.Show(this);
+            }
         }
 
         #endregion
@@ -1519,6 +1498,9 @@ private void ShowMainWindow()
 
             // 立即刷新这只股票
             RefreshSingleStock(code);
+
+            // 后台预加载这只股票的K线数据
+            PrefetchKLineData(new List<string> { code });
         }
 
 
@@ -1719,6 +1701,9 @@ private void ShowMainWindow()
                     UpdateStockRow(info.Code, info);
                 }
                 UpdateStatus(results);
+
+                // 行情刷新完成后，后台预加载所有股票的K线数据（双击时秒出图）
+                PrefetchKLineData(codes);
             }
             catch (Exception ex)
             {
@@ -1730,6 +1715,39 @@ private void ShowMainWindow()
             {
                 isRefreshing = false;
             }
+        }
+
+        /// <summary>
+        /// 后台预加载列表中所有股票的K线数据（日K/周K/月K），让双击时能秒出图。
+        /// 利用 StockService 自带的节流（200ms）+ 缓存（2分钟），避免被风控。
+        /// </summary>
+        private void PrefetchKLineData(List<string> codes)
+        {
+            if (shuttingDown || codes == null || codes.Count == 0) return;
+
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var periods = new[] { KLinePeriod.Daily, KLinePeriod.Weekly, KLinePeriod.Monthly };
+                foreach (var code in codes)
+                {
+                    if (shuttingDown) return;
+                    string name = stockData.ContainsKey(code) ? stockData[code].Name : code;
+                    if (string.IsNullOrWhiteSpace(name)) name = code;
+
+                    foreach (var period in periods)
+                    {
+                        if (shuttingDown) return;
+                        try
+                        {
+                            StockService.FetchKLineSync(code, name, period, 120);
+                        }
+                        catch
+                        {
+                            // 单只股票/单周期失败不影响其他预加载
+                        }
+                    }
+                }
+            });
         }
 
         private void UpdateStatus(List<StockInfo> results)
