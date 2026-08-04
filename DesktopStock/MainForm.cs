@@ -55,6 +55,8 @@ namespace DesktopStock
         private bool exitApp = false;
         // 导入配置时跳过 FormClosing 中的 SaveSettings，避免用旧配置覆盖刚导入的文件
         private bool skipSaveOnClosing = false;
+        // 关闭/重启过程中阻止异步刷新修改集合，防止"集合已修改"异常
+        private bool shuttingDown = false;
         // 隐藏到托盘前的窗口位置和大小（仅 Normal 状态记录），用于恢复时还原
         private Point hiddenLocation;
         private Size hiddenSize;
@@ -589,10 +591,6 @@ namespace DesktopStock
             miOpenConfig.Click += (s, e) => OpenSettingsDialog();
             trayMenu.Items.Add(miOpenConfig);
 
-            var miResetConfig = new ToolStripMenuItem("重置所有设置");
-            miResetConfig.Click += (s, e) => ResetAllSettings();
-            trayMenu.Items.Add(miResetConfig);
-
             trayMenu.Items.Add(new ToolStripSeparator());
 
             miExit = new ToolStripMenuItem("退出");
@@ -665,6 +663,8 @@ private void ShowMainWindow()
 
         private void LoadAndApplySettings()
         {
+            if (shuttingDown) return;
+
             settings = StockDataStore.Load();
 
             // 恢复窗口状态
@@ -751,6 +751,8 @@ private void ShowMainWindow()
 
         private void SaveSettings()
         {
+            if (shuttingDown) return;
+
             // 只在窗口正常状态时保存位置和大小（最小化时坐标异常）
             if (this.WindowState == FormWindowState.Normal)
             {
@@ -844,6 +846,8 @@ private void ShowMainWindow()
 
         private void UpdateStockRow(string code, StockInfo info)
         {
+            if (shuttingDown) return;
+
             stockData[code] = info;
 
             // 查找对应行
@@ -907,6 +911,8 @@ private void ShowMainWindow()
         /// </summary>
         private void UpdateSummaryStats()
         {
+            if (shuttingDown) return;
+
             decimal totalCost = 0;
             decimal totalCurrent = 0;
             decimal totalProfit = 0;
@@ -1332,8 +1338,15 @@ private void ShowMainWindow()
             string dir = Path.GetDirectoryName(dst);
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-            // 标记跳过 FormClosing 中的 SaveSettings，避免用内存中的旧配置覆盖刚导入的文件
+            // 跳过 FormClosing 中的 SaveSettings，避免用内存中的旧配置覆盖刚导入的文件
             skipSaveOnClosing = true;
+
+            // 标记关闭中，阻止异步刷新修改集合
+            shuttingDown = true;
+
+            // 停止刷新定时器，防止关闭过程中 RefreshAllStocksAsync 仍在遍历集合引发异常
+            if (refreshTimer != null) refreshTimer.Stop();
+            isRefreshing = false;
 
             File.Copy(sourcePath, dst, true);
 
@@ -1397,41 +1410,6 @@ private void ShowMainWindow()
 
             MessageBox.Show("设置已应用并保存。", "提示",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-
-        /// <summary>
-        /// 重置所有设置
-        /// </summary>
-        private void ResetAllSettings()
-        {
-            var result = MessageBox.Show(
-                "确定要重置所有设置吗？\n\n" +
-                "将会清除：\n" +
-                "• 所有股票列表\n" +
-                "• 窗口位置和大小\n" +
-                "• 悬浮球位置\n" +
-                "• 列宽和可见性\n" +
-                "• 透明度和置顶状态\n\n" +
-                "此操作不可撤销！",
-                "重置所有设置", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-
-            if (result != DialogResult.Yes) return;
-
-            try
-            {
-                string configFile = GetConfigFilePath();
-                if (File.Exists(configFile)) File.Delete(configFile);
-
-                MessageBox.Show("所有设置已重置，程序将重启。", "重置成功",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                exitApp = true;
-                Application.Restart();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("重置失败: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
         }
 
         #endregion
@@ -1555,49 +1533,59 @@ private void ShowMainWindow()
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            // 关闭前立即保存（停止防抖定时器，直接写盘）
-            moveResizePending = false;
-            if (saveDebounceTimer != null) saveDebounceTimer.Stop();
-            // 导入配置时跳过保存，避免用内存中的旧配置覆盖刚导入的文件
-            if (!skipSaveOnClosing)
+            // 标记关闭中，阻止异步刷新修改集合
+            shuttingDown = true;
+
+            try
             {
-                SaveSettings();
+                // 关闭前立即保存（停止防抖定时器，直接写盘）
+                moveResizePending = false;
+                if (saveDebounceTimer != null) saveDebounceTimer.Stop();
+                // 导入配置时跳过保存，避免用内存中的旧配置覆盖刚导入的文件
+                if (!skipSaveOnClosing)
+                {
+                    SaveSettings();
+                }
+
+                // 非用户主动"退出"时，仅隐藏到托盘而不结束程序
+                if (!exitApp && e.CloseReason == CloseReason.UserClosing)
+                {
+                    e.Cancel = true;
+                    // 在隐藏前记录当前窗口位置和大小（只有 Normal 状态才记录）
+                    if (this.WindowState == FormWindowState.Normal)
+                    {
+                        hiddenLocation = this.Location;
+                        hiddenSize = this.Size;
+                        hasHiddenState = true;
+                    }
+                    this.Hide();
+
+                    // 显示悬浮球（如果用户没有禁用）
+                    if (settings != null && settings.ShowFloatingBall)
+                    {
+                        ShowFloatingBall();
+                    }
+
+                    if (trayIcon != null)
+                    {
+                        trayIcon.ShowBalloonTip(2000, "桌面股市", "程序已最小化到托盘，双击图标可恢复窗口。", ToolTipIcon.Info);
+                    }
+                    return;
+                }
+
+                // 真正退出：停止定时器
+                if (refreshTimer != null) refreshTimer.Stop();
+                // 退出时释放悬浮球
+                if (floatingBall != null)
+                {
+                    try { floatingBall.Close(); } catch { }
+                    try { floatingBall.Dispose(); } catch { }
+                    floatingBall = null;
+                }
             }
-
-            // 非用户主动"退出"时，仅隐藏到托盘而不结束程序
-            if (!exitApp && e.CloseReason == CloseReason.UserClosing)
+            catch
             {
-                e.Cancel = true;
-                // 在隐藏前记录当前窗口位置和大小（只有 Normal 状态才记录）
-                if (this.WindowState == FormWindowState.Normal)
-                {
-                    hiddenLocation = this.Location;
-                    hiddenSize = this.Size;
-                    hasHiddenState = true;
-                }
-                this.Hide();
-
-                // 显示悬浮球（如果用户没有禁用）
-                if (settings != null && settings.ShowFloatingBall)
-                {
-                    ShowFloatingBall();
-                }
-
-                if (trayIcon != null)
-                {
-                    trayIcon.ShowBalloonTip(2000, "桌面股市", "程序已最小化到托盘，双击图标可恢复窗口。", ToolTipIcon.Info);
-                }
-                return;
-            }
-
-            // 真正退出：停止定时器
-            if (refreshTimer != null) refreshTimer.Stop();
-            // 退出时释放悬浮球
-            if (floatingBall != null)
-            {
-                floatingBall.Close();
-                floatingBall.Dispose();
-                floatingBall = null;
+                // 关闭过程中发生的任何异常都不应该阻止程序退出
             }
         }
 
@@ -1680,6 +1668,8 @@ private void ShowMainWindow()
         {
             try
             {
+                if (shuttingDown) return;
+
                 lblStatus.Text = "正在获取 " + code + "...";
                 var codes = new List<string> { code };
 
@@ -1687,16 +1677,20 @@ private void ShowMainWindow()
                     StockService.FetchStocksSync(codes)
                 );
 
+                if (shuttingDown) return;
+
                 lblStatus.Text = "OK";
 
                 foreach (var info in results)
                 {
+                    if (shuttingDown) return;
                     UpdateStockRow(info.Code, info);
                 }
                 UpdateStatus(results);
             }
             catch (Exception ex)
             {
+                if (shuttingDown) return;
                 string msg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
                 lblStatus.Text = "X " + (msg.Length > 40 ? msg.Substring(0, 40) : msg);
             }
@@ -1706,6 +1700,7 @@ private void ShowMainWindow()
         {
             if (isRefreshing) return;
             if (stockConfigs.Count == 0) return;
+            if (shuttingDown) return;
 
             isRefreshing = true;
             try
@@ -1717,6 +1712,8 @@ private void ShowMainWindow()
                     StockService.FetchStocksSync(codes)
                 );
 
+                if (shuttingDown) return;
+
                 foreach (var info in results)
                 {
                     UpdateStockRow(info.Code, info);
@@ -1725,6 +1722,7 @@ private void ShowMainWindow()
             }
             catch (Exception ex)
             {
+                if (shuttingDown) return;
                 string msg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
                 lblStatus.Text = "! " + (msg.Length > 40 ? msg.Substring(0, 40) : msg);
             }

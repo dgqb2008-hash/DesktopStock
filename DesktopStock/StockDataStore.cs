@@ -62,10 +62,10 @@ namespace DesktopStock
             ColumnVisible = new List<bool>();
             Opacity = 0.90;
             TopMost = false;
-            WindowWidth = 320;
+            WindowWidth = 770;
             WindowHeight = 240;
-            WindowLeft = 100;
-            WindowTop = 100;
+            WindowLeft = 500;
+            WindowTop = 350;
             RefreshInterval = 5;
             ShowFloatingBall = false;
             FloatingBallX = -1;
