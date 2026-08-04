@@ -1,8 +1,0 @@
-C:\Users\Administrator\Desktop\桌面股市\DesktopStock\bin\Debug\DesktopStock.exe.config
-C:\Users\Administrator\Desktop\桌面股市\DesktopStock\bin\Debug\DesktopStock.exe
-C:\Users\Administrator\Desktop\桌面股市\DesktopStock\bin\Debug\DesktopStock.pdb
-C:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Debug\DesktopStock.csprojResolveAssemblyReference.cache
-C:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Debug\DesktopStock.Properties.Resources.resources
-C:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Debug\DesktopStock.csproj.GenerateResource.Cache
-C:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Debug\DesktopStock.exe
-C:\Users\Administrator\Desktop\桌面股市\DesktopStock\obj\Debug\DesktopStock.pdb
