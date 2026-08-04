@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -24,6 +25,10 @@ namespace DesktopStock
         private TrackBar trackOpacity;
         private Label lblOpacityVal;
         private Label lblStatus;
+        private Label lblTotalCost;
+        private Label lblCurrentTotal;
+        private Label lblTotalProfitAmt;
+        private Label lblTotalDailyProfitAmt;
         private DataGridView stockGridView;
         private ContextMenuStrip rowContextMenu;
         private ToolStripMenuItem miEditCostQuantity;
@@ -32,6 +37,8 @@ namespace DesktopStock
         private ContextMenuStrip trayMenu;
         private ToolStripMenuItem miShow;
         private ToolStripMenuItem miExit;
+        private ToolStripMenuItem miToggleFloatingBall;
+        private FloatingBall floatingBall;
 
         // ---- 数据 ----
         private Timer refreshTimer;
@@ -53,7 +60,7 @@ namespace DesktopStock
 
         // ---- 常量 ----
         private const int TOOLBAR_HEIGHT = 26;
-        private const int MIN_FORM_WIDTH = 380;
+        private const int MIN_FORM_WIDTH = 660;
         private const int MIN_FORM_HEIGHT = 280;
 
         public MainForm()
@@ -63,6 +70,9 @@ namespace DesktopStock
             this.StartPosition = FormStartPosition.Manual;
             this.MinimumSize = new Size(MIN_FORM_WIDTH, MIN_FORM_HEIGHT);
             this.FormBorderStyle = FormBorderStyle.Sizable;
+            // 隐藏最小化和最大化按钮
+            this.MinimizeBox = false;
+            this.MaximizeBox = false;
             this.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Windows.Forms.Application.ExecutablePath);
             this.DoubleBuffered = true;
             // 不在任务栏显示图标，驻留系统托盘
@@ -115,6 +125,7 @@ namespace DesktopStock
             this.FormClosing += MainForm_FormClosing;
             this.FormClosed += MainForm_FormClosed;
             this.Resize += MainForm_Resize;
+            this.Move += MainForm_Move;
         }
 
         #region 初始化界面
@@ -372,6 +383,50 @@ namespace DesktopStock
                 Font = new Font("Microsoft YaHei", 8)
             };
 
+            // 总成本标签
+            lblTotalCost = new Label
+            {
+                Text = "成本:0",
+                Location = new Point(305, 5),
+                Size = new Size(80, 16),
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.FromArgb(100, 100, 100),
+                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold)
+            };
+
+            // 当前总额标签
+            lblCurrentTotal = new Label
+            {
+                Text = "现额:0",
+                Location = new Point(388, 5),
+                Size = new Size(80, 16),
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.FromArgb(100, 100, 100),
+                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold)
+            };
+
+            // 总盈利标签
+            lblTotalProfitAmt = new Label
+            {
+                Text = "盈利:0",
+                Location = new Point(471, 5),
+                Size = new Size(80, 16),
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.FromArgb(120, 120, 120),
+                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold)
+            };
+
+            // 今盈利标签
+            lblTotalDailyProfitAmt = new Label
+            {
+                Text = "今盈:0",
+                Location = new Point(554, 5),
+                Size = new Size(80, 16),
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.FromArgb(120, 120, 120),
+                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold)
+            };
+
             // 状态标签（右侧）
             lblStatus = new Label
             {
@@ -386,7 +441,9 @@ namespace DesktopStock
 
             toolPanel.Controls.AddRange(new Control[] {
                 btnAdd, txtStockCode, txtCostPrice, txtQuantity,
-                btnPin, trackOpacity, lblOpacityVal, lblStatus
+                btnPin, trackOpacity, lblOpacityVal,
+                lblTotalCost, lblCurrentTotal, lblTotalProfitAmt, lblTotalDailyProfitAmt,
+                lblStatus
             });
 
             // ---- 股票列表 DataGridView ----
@@ -420,11 +477,13 @@ namespace DesktopStock
             stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colChangeAmount", HeaderText = "涨跌额", FillWeight = 8, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
             stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colChangePercent", HeaderText = "涨跌幅", FillWeight = 8, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
             stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colTotalProfitPct", HeaderText = "总盈亏%", FillWeight = 9, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
-            stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colTotalProfitAmt", HeaderText = "总盈亏金额", FillWeight = 11, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
+            stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colTotalProfitAmt", HeaderText = "总盈亏额", FillWeight = 11, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
             stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colDailyProfitPct", HeaderText = "今盈亏%", FillWeight = 9, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
-            stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colDailyProfitAmt", HeaderText = "今盈亏金额", FillWeight = 11, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
+            stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colDailyProfitAmt", HeaderText = "今盈亏额", FillWeight = 11, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
             stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colCostPrice", HeaderText = "成本价", FillWeight = 8, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
             stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colQuantity", HeaderText = "数量", FillWeight = 7, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
+            stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colCostTotal", HeaderText = "成本总额", FillWeight = 11, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
+            stockGridView.Columns.Add(new DataGridViewTextBoxColumn { Name = "colCurrentTotal", HeaderText = "当前总额", FillWeight = 11, ReadOnly = true, DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight } });
 
             // 设置列头样式
             stockGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(240, 240, 240);
@@ -490,6 +549,32 @@ namespace DesktopStock
 
             trayMenu.Items.Add(new ToolStripSeparator());
 
+            miToggleFloatingBall = new ToolStripMenuItem("显示悬浮球");
+            miToggleFloatingBall.CheckOnClick = true;
+            miToggleFloatingBall.Checked = settings != null && settings.ShowFloatingBall;
+            miToggleFloatingBall.Click += MiToggleFloatingBall_Click;
+            trayMenu.Items.Add(miToggleFloatingBall);
+
+            trayMenu.Items.Add(new ToolStripSeparator());
+
+            var miOpenConfigDir = new ToolStripMenuItem("打开配置目录");
+            miOpenConfigDir.Click += (s, e) => OpenConfigDirectory();
+            trayMenu.Items.Add(miOpenConfigDir);
+
+            var miExportConfig = new ToolStripMenuItem("导出配置");
+            miExportConfig.Click += (s, e) => ExportConfigToFile();
+            trayMenu.Items.Add(miExportConfig);
+
+            var miImportConfig = new ToolStripMenuItem("导入配置");
+            miImportConfig.Click += (s, e) => ImportConfigFromFile();
+            trayMenu.Items.Add(miImportConfig);
+
+            var miResetConfig = new ToolStripMenuItem("重置所有设置");
+            miResetConfig.Click += (s, e) => ResetAllSettings();
+            trayMenu.Items.Add(miResetConfig);
+
+            trayMenu.Items.Add(new ToolStripSeparator());
+
             miExit = new ToolStripMenuItem("退出");
             miExit.Click += (s, e) =>
             {
@@ -518,30 +603,41 @@ namespace DesktopStock
         }
 
         /// <summary>
-        /// 显示主窗口并置于前台
-        /// </summary>
-        private void ShowMainWindow()
+/// 显示主窗口并置于前台
+/// </summary>
+private void ShowMainWindow()
+{
+    // 显式还原隐藏前的位置和大小（ShowInTaskbar=false 时句柄可能被重建导致位置丢失）
+    if (hasHiddenState)
+    {
+        // 先把窗口状态设为 Normal，再设置位置和大小
+        this.WindowState = FormWindowState.Normal;
+        this.Location = hiddenLocation;
+        this.Size = hiddenSize;
+    }
+    else
+    {
+        if (this.WindowState == FormWindowState.Minimized)
         {
-            if (this.WindowState == FormWindowState.Minimized)
-            {
-                this.WindowState = FormWindowState.Normal;
-            }
-            // 显式还原隐藏前的位置和大小（ShowInTaskbar=false 时句柄可能被重建导致位置丢失）
-            if (hasHiddenState)
-            {
-                this.Location = hiddenLocation;
-                this.Size = hiddenSize;
-            }
-            this.Show();
-            this.Activate();
-            this.BringToFront();
-            // 重新设为 TopMost 可保持之前的置顶状态
-            if (settings != null && settings.TopMost)
-            {
-                this.TopMost = false;
-                this.TopMost = true;
-            }
+            this.WindowState = FormWindowState.Normal;
         }
+    }
+    this.Show();
+    this.Activate();
+    this.BringToFront();
+    // 重新设为 TopMost 可保持之前的置顶状态
+    if (settings != null && settings.TopMost)
+    {
+        this.TopMost = false;
+        this.TopMost = true;
+    }
+
+    // 恢复主窗口时自动隐藏悬浮球（避免重复显示）
+    if (floatingBall != null && floatingBall.Visible)
+    {
+        floatingBall.Hide();
+    }
+}
 
         #endregion
 
@@ -619,6 +715,18 @@ namespace DesktopStock
             hiddenLocation = this.Location;
             hiddenSize = this.Size;
             hasHiddenState = true;
+
+            // 初始化悬浮球，并根据上次保存的状态恢复显示
+            InitializeFloatingBall();
+
+            // 恢复"显示悬浮球"状态：避免重启后丢失该设置
+            // （InitializeTrayIcon 在 settings 加载前执行，其 Checked 不可信，这里以 settings 为准重新设定）
+            if (miToggleFloatingBall != null)
+                miToggleFloatingBall.Checked = settings.ShowFloatingBall;
+            if (settings.ShowFloatingBall)
+            {
+                ShowFloatingBall();
+            }
         }
 
         private void SaveSettings()
@@ -651,6 +759,18 @@ namespace DesktopStock
             {
                 settings.ColumnVisible.Add(col.Visible);
             }
+            // 保存悬浮球状态
+            settings.ShowFloatingBall = (miToggleFloatingBall != null && miToggleFloatingBall.Checked);
+            if (floatingBall != null)
+            {
+                settings.FloatingBallX = floatingBall.Location.X;
+                settings.FloatingBallY = floatingBall.Location.Y;
+            }
+            // 保存置顶按钮状态
+            if (btnPin != null && btnPin.Tag != null)
+            {
+                settings.TopMost = (btnPin.Tag.ToString() == "1");
+            }
             StockDataStore.Save(settings);
         }
 
@@ -678,6 +798,7 @@ namespace DesktopStock
             row.Cells["colQuantity"].Value = quantity > 0 ? quantity.ToString() : "";
 
             ApplyRowStyle(row, 0, false);
+            UpdateSummaryStats();
         }
 
         private void RemoveStockFromGrid(string code)
@@ -697,6 +818,7 @@ namespace DesktopStock
                 }
             }
 
+            UpdateSummaryStats();
             SaveSettings();
         }
 
@@ -725,11 +847,17 @@ namespace DesktopStock
                         decimal totalProfitPct = (info.Price - costPrice) / costPrice * 100;
                         row.Cells["colTotalProfitPct"].Value = (totalProfit >= 0 ? "+" : "") + totalProfitPct.ToString("F2") + "%";
                         row.Cells["colTotalProfitAmt"].Value = (totalProfit >= 0 ? "+" : "") + totalProfit.ToString("N0");
+                        // 成本总额 = 成本价 × 数量
+                        row.Cells["colCostTotal"].Value = (costPrice * quantity).ToString("N0");
+                        // 当前总额 = 现价 × 数量
+                        row.Cells["colCurrentTotal"].Value = (info.Price * quantity).ToString("N0");
                     }
                     else
                     {
                         row.Cells["colTotalProfitPct"].Value = "--";
                         row.Cells["colTotalProfitAmt"].Value = "--";
+                        row.Cells["colCostTotal"].Value = "--";
+                        row.Cells["colCurrentTotal"].Value = "--";
                     }
 
                     if (quantity > 0)
@@ -746,8 +874,71 @@ namespace DesktopStock
 
                     // 应用颜色样式
                     ApplyRowStyle(row, info.ChangeAmount, info.IsValid);
+
+                    // 刷新总统计
+                    UpdateSummaryStats();
                     break;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 计算并更新工具栏上的总统计：成本总额、当前总额、盈利总额、今盈利总额
+        /// </summary>
+        private void UpdateSummaryStats()
+        {
+            decimal totalCost = 0;
+            decimal totalCurrent = 0;
+            decimal totalProfit = 0;
+            decimal totalDailyProfit = 0;
+
+            foreach (DataGridViewRow row in stockGridView.Rows)
+            {
+                string code = row.Cells["colCode"].Value?.ToString();
+                if (string.IsNullOrEmpty(code)) continue;
+                if (!stockConfigs.ContainsKey(code)) continue;
+                var cfg = stockConfigs[code];
+                if (cfg.CostPrice <= 0 || cfg.Quantity <= 0) continue;
+
+                totalCost += cfg.CostPrice * cfg.Quantity;
+                if (stockData.ContainsKey(code))
+                {
+                    var info = stockData[code];
+                    totalCurrent += info.Price * cfg.Quantity;
+                    totalProfit += (info.Price - cfg.CostPrice) * cfg.Quantity;
+                    // 今盈亏 = 涨跌额 × 数量
+                    totalDailyProfit += info.ChangeAmount * cfg.Quantity;
+                }
+                else
+                {
+                    // 没有实时行情时按成本价计入
+                    totalCurrent += cfg.CostPrice * cfg.Quantity;
+                }
+            }
+
+            // 更新工具栏显示
+            if (lblTotalCost != null)
+            {
+                lblTotalCost.Text = "成本:" + totalCost.ToString("N0");
+                lblCurrentTotal.Text = "现额:" + totalCurrent.ToString("N0");
+                lblTotalProfitAmt.Text = "盈利:" + (totalProfit >= 0 ? "+" : "") + totalProfit.ToString("N0");
+                lblTotalDailyProfitAmt.Text = "今盈:" + (totalDailyProfit >= 0 ? "+" : "") + totalDailyProfit.ToString("N0");
+
+                // 总盈利颜色
+                if (totalProfit > 0) lblTotalProfitAmt.ForeColor = Color.FromArgb(220, 38, 38);
+                else if (totalProfit < 0) lblTotalProfitAmt.ForeColor = Color.FromArgb(22, 163, 74);
+                else lblTotalProfitAmt.ForeColor = Color.FromArgb(120, 120, 120);
+
+                // 今盈利颜色
+                if (totalDailyProfit > 0) lblTotalDailyProfitAmt.ForeColor = Color.FromArgb(220, 38, 38);
+                else if (totalDailyProfit < 0) lblTotalDailyProfitAmt.ForeColor = Color.FromArgb(22, 163, 74);
+                else lblTotalDailyProfitAmt.ForeColor = Color.FromArgb(120, 120, 120);
+            }
+
+            // 更新悬浮球（如果已创建）
+            if (floatingBall != null && floatingBall.Visible)
+            {
+                floatingBall.UpdateValues(totalProfit, totalDailyProfit);
             }
         }
 
@@ -875,6 +1066,21 @@ namespace DesktopStock
                     {
                         UpdateStockRow(code, stockData[code]);
                     }
+                    else
+                    {
+                        // 没有实时行情也要更新总额显示
+                        if (form.CostPrice > 0 && form.Quantity > 0)
+                        {
+                            stockGridView.CurrentRow.Cells["colCostTotal"].Value = (form.CostPrice * form.Quantity).ToString("N0");
+                            stockGridView.CurrentRow.Cells["colCurrentTotal"].Value = (form.CostPrice * form.Quantity).ToString("N0");
+                        }
+                        else
+                        {
+                            stockGridView.CurrentRow.Cells["colCostTotal"].Value = "--";
+                            stockGridView.CurrentRow.Cells["colCurrentTotal"].Value = "--";
+                        }
+                        UpdateSummaryStats();
+                    }
 
                     SaveSettings();
                 }
@@ -904,6 +1110,268 @@ namespace DesktopStock
                 RemoveStockFromGrid(code);
             }
         }
+
+        #region 悬浮球
+
+        private void InitializeFloatingBall()
+        {
+            if (floatingBall != null) return;
+
+            floatingBall = new FloatingBall();
+
+            // 恢复悬浮球位置
+            if (settings.FloatingBallX >= 0 && settings.FloatingBallY >= 0)
+            {
+                floatingBall.Location = new Point(settings.FloatingBallX, settings.FloatingBallY);
+            }
+
+            // 悬浮球右键菜单：显示主窗口 / 隐藏悬浮球
+            var ballMenu = new ContextMenuStrip();
+            var miBallShow = new ToolStripMenuItem("显示主窗口");
+            miBallShow.Click += (s, e) => ShowMainWindow();
+            var miBallHide = new ToolStripMenuItem("隐藏悬浮球");
+            miBallHide.Click += (s, e) => HideFloatingBall();
+            ballMenu.Items.Add(miBallShow);
+            ballMenu.Items.Add(miBallHide);
+            floatingBall.ContextMenuStrip = ballMenu;
+
+            // 鼠标释放时记录位置
+            floatingBall.MouseUp += (s, e) =>
+            {
+                if (settings != null && floatingBall.Visible)
+                {
+                    settings.FloatingBallX = floatingBall.Location.X;
+                    settings.FloatingBallY = floatingBall.Location.Y;
+                    SaveSettings();
+                }
+            };
+
+            // 双击悬浮球打开主窗口（与右键菜单"显示主窗口"走同一路径）
+            floatingBall.OpenMainWindowRequested += (s, e) => ShowMainWindow();
+        }
+
+        /// <summary>
+        /// 显示悬浮球
+        /// </summary>
+        private void ShowFloatingBall()
+        {
+            if (floatingBall == null) InitializeFloatingBall();
+
+            if (settings != null) settings.ShowFloatingBall = true;
+
+            // 同步主窗口透明度
+            if (this.Opacity > 0.1) floatingBall.Opacity = this.Opacity;
+
+            // 在 Show 前预先用当前真实数据计算尺寸，避免出现"先大后小"的问题
+            PreAdjustBallSize();
+
+            // 立即更新一次值（保持自适应逻辑）
+            UpdateSummaryStats();
+            floatingBall.Show();
+            floatingBall.BringToFront();
+
+            if (miToggleFloatingBall != null) miToggleFloatingBall.Checked = true;
+
+            // 立即持久化 ShowFloatingBall=true 状态（避免下次启动丢失）
+            SaveSettings();
+        }
+
+        /// <summary>
+        /// 在悬浮球显示前，根据当前汇总数据先调整一次尺寸
+        /// </summary>
+        private void PreAdjustBallSize()
+        {
+            if (floatingBall == null) return;
+
+            decimal totalProfit = 0;
+            decimal totalDailyProfit = 0;
+
+            foreach (var pair in stockConfigs)
+            {
+                var cfg = pair.Value;
+                if (cfg.CostPrice <= 0 || cfg.Quantity <= 0) continue;
+
+                if (stockData.ContainsKey(pair.Key))
+                {
+                    var info = stockData[pair.Key];
+                    totalProfit += (info.Price - cfg.CostPrice) * cfg.Quantity;
+                    totalDailyProfit += info.ChangeAmount * cfg.Quantity;
+                }
+            }
+
+            // 设置属性后立即调整尺寸（Show 之前完成）
+            floatingBall.SetValuesAndResize(totalProfit, totalDailyProfit);
+        }
+
+        /// <summary>
+        /// 隐藏悬浮球
+        /// </summary>
+        private void HideFloatingBall()
+        {
+            if (floatingBall != null) floatingBall.Hide();
+            if (settings != null) settings.ShowFloatingBall = false;
+            if (miToggleFloatingBall != null) miToggleFloatingBall.Checked = false;
+            SaveSettings();
+        }
+
+        /// <summary>
+        /// 托盘菜单点击：显示/隐藏悬浮球
+        /// </summary>
+        private void MiToggleFloatingBall_Click(object sender, EventArgs e)
+        {
+            if (miToggleFloatingBall.Checked)
+            {
+                ShowFloatingBall();
+            }
+            else
+            {
+                HideFloatingBall();
+            }
+        }
+
+        #endregion
+
+        #region 配置管理（导入/导出/重置/打开目录）
+
+        /// <summary>
+        /// 获取配置文件目录
+        /// </summary>
+        private string GetConfigDirectory()
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DesktopStock");
+        }
+
+        /// <summary>
+        /// 获取配置文件完整路径
+        /// </summary>
+        private string GetConfigFilePath()
+        {
+            return Path.Combine(GetConfigDirectory(), "settings.json");
+        }
+
+        /// <summary>
+        /// 打开配置目录
+        /// </summary>
+        private void OpenConfigDirectory()
+        {
+            try
+            {
+                string dir = GetConfigDirectory();
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                System.Diagnostics.Process.Start("explorer.exe", dir);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("无法打开配置目录: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 导出配置到用户选择的文件
+        /// </summary>
+        private void ExportConfigToFile()
+        {
+            try
+            {
+                // 先保存最新状态
+                SaveSettings();
+
+                using (var dlg = new SaveFileDialog())
+                {
+                    dlg.Title = "导出配置";
+                    dlg.Filter = "配置文件 (*.json)|*.json|所有文件 (*.*)|*.*";
+                    dlg.FileName = "DesktopStock_配置_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".json";
+                    dlg.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+
+                    if (dlg.ShowDialog(this) == DialogResult.OK)
+                    {
+                        File.Copy(GetConfigFilePath(), dlg.FileName, true);
+                        MessageBox.Show("配置已导出到:\n" + dlg.FileName, "导出成功",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("导出失败: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 从用户选择的文件导入配置
+        /// </summary>
+        private void ImportConfigFromFile()
+        {
+            try
+            {
+                using (var dlg = new OpenFileDialog())
+                {
+                    dlg.Title = "导入配置";
+                    dlg.Filter = "配置文件 (*.json)|*.json|所有文件 (*.*)|*.*";
+                    dlg.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+
+                    if (dlg.ShowDialog(this) == DialogResult.OK)
+                    {
+                        var result = MessageBox.Show(
+                            "导入配置将覆盖当前所有设置（包括股票列表、窗口位置、悬浮球等），是否继续？",
+                            "确认导入", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                        if (result != DialogResult.Yes) return;
+
+                        File.Copy(dlg.FileName, GetConfigFilePath(), true);
+                        MessageBox.Show("配置已导入，程序将重启以应用新设置。", "导入成功",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                        // 重启应用
+                        exitApp = true;
+                        Application.Restart();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("导入失败: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 重置所有设置
+        /// </summary>
+        private void ResetAllSettings()
+        {
+            var result = MessageBox.Show(
+                "确定要重置所有设置吗？\n\n" +
+                "将会清除：\n" +
+                "• 所有股票列表\n" +
+                "• 窗口位置和大小\n" +
+                "• 悬浮球位置\n" +
+                "• 列宽和可见性\n" +
+                "• 透明度和置顶状态\n\n" +
+                "此操作不可撤销！",
+                "重置所有设置", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+            if (result != DialogResult.Yes) return;
+
+            try
+            {
+                string configFile = GetConfigFilePath();
+                if (File.Exists(configFile)) File.Delete(configFile);
+
+                MessageBox.Show("所有设置已重置，程序将重启。", "重置成功",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                exitApp = true;
+                Application.Restart();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("重置失败: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        #endregion
 
         private void OpenChartWindow(string code)
         {
@@ -1017,6 +1485,8 @@ namespace DesktopStock
         {
             double opacity = trackOpacity.Value / 100.0;
             this.Opacity = opacity;
+            // 同步悬浮球透明度
+            if (floatingBall != null) floatingBall.Opacity = opacity;
             lblOpacityVal.Text = trackOpacity.Value + "%";
         }
 
@@ -1027,11 +1497,25 @@ namespace DesktopStock
             if (saveDebounceTimer != null) saveDebounceTimer.Stop();
             SaveSettings();
 
-            // 非用户主动“退出”时，仅隐藏到托盘而不结束程序
+            // 非用户主动"退出"时，仅隐藏到托盘而不结束程序
             if (!exitApp && e.CloseReason == CloseReason.UserClosing)
             {
                 e.Cancel = true;
+                // 在隐藏前记录当前窗口位置和大小（只有 Normal 状态才记录）
+                if (this.WindowState == FormWindowState.Normal)
+                {
+                    hiddenLocation = this.Location;
+                    hiddenSize = this.Size;
+                    hasHiddenState = true;
+                }
                 this.Hide();
+
+                // 显示悬浮球（如果用户没有禁用）
+                if (settings != null && settings.ShowFloatingBall)
+                {
+                    ShowFloatingBall();
+                }
+
                 if (trayIcon != null)
                 {
                     trayIcon.ShowBalloonTip(2000, "桌面股市", "程序已最小化到托盘，双击图标可恢复窗口。", ToolTipIcon.Info);
@@ -1041,6 +1525,13 @@ namespace DesktopStock
 
             // 真正退出：停止定时器
             if (refreshTimer != null) refreshTimer.Stop();
+            // 退出时释放悬浮球
+            if (floatingBall != null)
+            {
+                floatingBall.Close();
+                floatingBall.Dispose();
+                floatingBall = null;
+            }
         }
 
         private void MainForm_FormClosed(object sender, FormClosedEventArgs e)
@@ -1060,11 +1551,43 @@ namespace DesktopStock
             // 最小化时隐藏窗口，驻留托盘
             if (this.WindowState == FormWindowState.Minimized)
             {
+                // 在隐藏前先记录窗口的"前一次 Normal 状态"的位置和大小
+                // WinForms 的 RestoreBounds 在 Minimized 状态下仍保留正常状态的尺寸
+                if (this.RestoreBounds.Width > 0 && this.RestoreBounds.Height > 0)
+                {
+                    hiddenLocation = this.RestoreBounds.Location;
+                    hiddenSize = this.RestoreBounds.Size;
+                }
+                else
+                {
+                    // 兜底：使用当前 Size
+                    hiddenLocation = this.Location;
+                    hiddenSize = this.Size;
+                }
+                hasHiddenState = true;
+
                 this.Hide();
                 if (trayIcon != null)
                 {
                     trayIcon.ShowBalloonTip(2000, "桌面股市", "程序已最小化到托盘，双击图标可恢复窗口。", ToolTipIcon.Info);
                 }
+            }
+            else if (this.WindowState == FormWindowState.Normal)
+            {
+                // 在 Normal 状态下持续记录当前位置和大小
+                hiddenLocation = this.Location;
+                hiddenSize = this.Size;
+                hasHiddenState = true;
+            }
+        }
+
+        private void MainForm_Move(object sender, EventArgs e)
+        {
+            // 窗口移动时记录位置（仅在 Normal 状态）
+            if (this.WindowState == FormWindowState.Normal)
+            {
+                hiddenLocation = this.Location;
+                hasHiddenState = true;
             }
         }
 

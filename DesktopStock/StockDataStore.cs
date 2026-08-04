@@ -45,6 +45,9 @@ namespace DesktopStock
         public int WindowLeft { get; set; }
         public int WindowTop { get; set; }
         public int RefreshInterval { get; set; }
+        public bool ShowFloatingBall { get; set; }
+        public int FloatingBallX { get; set; }
+        public int FloatingBallY { get; set; }
 
         // 向后兼容：获取股票代码列表
         public List<string> StockCodes
@@ -64,6 +67,9 @@ namespace DesktopStock
             WindowLeft = 100;
             WindowTop = 100;
             RefreshInterval = 5;
+            ShowFloatingBall = false;
+            FloatingBallX = -1;
+            FloatingBallY = -1;
         }
 
         /// <summary>
@@ -82,7 +88,10 @@ namespace DesktopStock
                 WindowHeight = this.WindowHeight,
                 WindowLeft = this.WindowLeft,
                 WindowTop = this.WindowTop,
-                RefreshInterval = this.RefreshInterval
+                RefreshInterval = this.RefreshInterval,
+                ShowFloatingBall = this.ShowFloatingBall,
+                FloatingBallX = this.FloatingBallX,
+                FloatingBallY = this.FloatingBallY
             };
         }
     }
@@ -123,6 +132,9 @@ namespace DesktopStock
                 settings.Opacity = GetDouble(json, "Opacity", 0.90);
                 settings.TopMost = GetBool(json, "TopMost", false);
                 settings.RefreshInterval = GetInt(json, "RefreshInterval", 5);
+                settings.ShowFloatingBall = GetBool(json, "ShowFloatingBall", false);
+                settings.FloatingBallX = GetInt(json, "FloatingBallX", -1);
+                settings.FloatingBallY = GetInt(json, "FloatingBallY", -1);
 
                 if (settings.Opacity < 0.3 || settings.Opacity > 1.0)
                     settings.Opacity = 0.90;
@@ -191,6 +203,9 @@ namespace DesktopStock
                     sb.Append("\"Opacity\":").Append(settings.Opacity.ToString("F2")).Append(",");
                     sb.Append("\"TopMost\":").Append(settings.TopMost.ToString().ToLower()).Append(",");
                     sb.Append("\"RefreshInterval\":").Append(settings.RefreshInterval).Append(",");
+                    sb.Append("\"ShowFloatingBall\":").Append(settings.ShowFloatingBall.ToString().ToLower()).Append(",");
+                    sb.Append("\"FloatingBallX\":").Append(settings.FloatingBallX).Append(",");
+                    sb.Append("\"FloatingBallY\":").Append(settings.FloatingBallY).Append(",");
 
                     // 股票配置列表（包含代码、成本价、数量）
                     sb.Append("\"Stocks\":[");

@@ -65,8 +65,8 @@ namespace DesktopStock
         {
             this.Text = (_data.Name ?? "") + " " + _data.Code + " - 分时走势";
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.MinimumSize = new Size(260, 260);
-            this.Size = new Size(340, 300);
+            this.MinimumSize = new Size(380, 260);
+            this.Size = new Size(600, 360);
             this.FormBorderStyle = FormBorderStyle.Sizable;
             this.DoubleBuffered = true;
             this.BackColor = Color.White;

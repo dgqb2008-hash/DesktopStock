@@ -66,6 +66,9 @@
     <Compile Include="ChartForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="FloatingBall.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
