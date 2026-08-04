@@ -53,6 +53,8 @@ namespace DesktopStock
         private bool moveResizePending = false;
         // 标记是否真正退出程序（由托盘“退出”菜单触发），否则关闭按钮只是隐藏到托盘
         private bool exitApp = false;
+        // 导入配置时跳过 FormClosing 中的 SaveSettings，避免用旧配置覆盖刚导入的文件
+        private bool skipSaveOnClosing = false;
         // 隐藏到托盘前的窗口位置和大小（仅 Normal 状态记录），用于恢复时还原
         private Point hiddenLocation;
         private Size hiddenSize;
@@ -583,17 +585,9 @@ namespace DesktopStock
 
             trayMenu.Items.Add(new ToolStripSeparator());
 
-            var miOpenConfigDir = new ToolStripMenuItem("打开配置目录");
-            miOpenConfigDir.Click += (s, e) => OpenConfigDirectory();
-            trayMenu.Items.Add(miOpenConfigDir);
-
-            var miExportConfig = new ToolStripMenuItem("导出配置");
-            miExportConfig.Click += (s, e) => ExportConfigToFile();
-            trayMenu.Items.Add(miExportConfig);
-
-            var miImportConfig = new ToolStripMenuItem("导入配置");
-            miImportConfig.Click += (s, e) => ImportConfigFromFile();
-            trayMenu.Items.Add(miImportConfig);
+            var miOpenConfig = new ToolStripMenuItem("打开配置");
+            miOpenConfig.Click += (s, e) => OpenSettingsDialog();
+            trayMenu.Items.Add(miOpenConfig);
 
             var miResetConfig = new ToolStripMenuItem("重置所有设置");
             miResetConfig.Click += (s, e) => ResetAllSettings();
@@ -1297,88 +1291,112 @@ private void ShowMainWindow()
         }
 
         /// <summary>
-        /// 打开配置目录
+        /// 打开图形化配置窗体
         /// </summary>
-        private void OpenConfigDirectory()
+        private void OpenSettingsDialog()
         {
-            try
+            // 先保存最新状态，确保用户看到的是当前配置
+            SaveSettings();
+
+            using (var form = new SettingsForm(settings))
             {
-                string dir = GetConfigDirectory();
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                System.Diagnostics.Process.Start("explorer.exe", dir);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("无法打开配置目录: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                // 订阅导出/导入事件
+                form.ExportRequest += ExportConfigViaForm;
+                form.ImportRequest += ImportConfigViaForm;
+
+                if (form.ShowDialog(this) == DialogResult.OK)
+                {
+                    ApplySettingsChanges(form.ResultSettings);
+                }
             }
         }
 
         /// <summary>
-        /// 导出配置到用户选择的文件
+        /// 处理配置窗体的导出请求：保存当前设置后复制文件
         /// </summary>
-        private void ExportConfigToFile()
+        private void ExportConfigViaForm(string targetPath)
         {
-            try
-            {
-                // 先保存最新状态
-                SaveSettings();
-
-                using (var dlg = new SaveFileDialog())
-                {
-                    dlg.Title = "导出配置";
-                    dlg.Filter = "配置文件 (*.json)|*.json|所有文件 (*.*)|*.*";
-                    dlg.FileName = "DesktopStock_配置_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".json";
-                    dlg.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-
-                    if (dlg.ShowDialog(this) == DialogResult.OK)
-                    {
-                        File.Copy(GetConfigFilePath(), dlg.FileName, true);
-                        MessageBox.Show("配置已导出到:\n" + dlg.FileName, "导出成功",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("导出失败: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            SaveSettings();
+            string src = GetConfigFilePath();
+            if (!File.Exists(src))
+                throw new InvalidOperationException("配置文件不存在，无法导出。");
+            File.Copy(src, targetPath, true);
         }
 
         /// <summary>
-        /// 从用户选择的文件导入配置
+        /// 处理配置窗体的导入请求：复制文件并重启应用
         /// </summary>
-        private void ImportConfigFromFile()
+        private void ImportConfigViaForm(string sourcePath)
         {
-            try
+            string dst = GetConfigFilePath();
+            string dir = Path.GetDirectoryName(dst);
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+            // 标记跳过 FormClosing 中的 SaveSettings，避免用内存中的旧配置覆盖刚导入的文件
+            skipSaveOnClosing = true;
+
+            File.Copy(sourcePath, dst, true);
+
+            // 重启应用以加载新配置
+            exitApp = true;
+            Application.Restart();
+        }
+
+        /// <summary>
+        /// 应用用户在配置窗体中修改的设置
+        /// </summary>
+        private void ApplySettingsChanges(AppSettings newSettings)
+        {
+            // 透明度
+            settings.Opacity = newSettings.Opacity;
+            this.Opacity = settings.Opacity;
+            trackOpacity.Value = (int)(settings.Opacity * 100);
+            lblOpacityVal.Text = trackOpacity.Value + "%";
+
+            // 置顶
+            settings.TopMost = newSettings.TopMost;
+            this.TopMost = settings.TopMost;
+            btnPin.Tag = settings.TopMost ? "1" : "0";
+            btnPin.BackColor = settings.TopMost ? Color.FromArgb(59, 130, 246) : Color.FromArgb(200, 200, 200);
+            btnPin.Invalidate();
+
+            // 刷新间隔
+            settings.RefreshInterval = newSettings.RefreshInterval;
+            if (refreshTimer != null)
             {
-                using (var dlg = new OpenFileDialog())
-                {
-                    dlg.Title = "导入配置";
-                    dlg.Filter = "配置文件 (*.json)|*.json|所有文件 (*.*)|*.*";
-                    dlg.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-
-                    if (dlg.ShowDialog(this) == DialogResult.OK)
-                    {
-                        var result = MessageBox.Show(
-                            "导入配置将覆盖当前所有设置（包括股票列表、窗口位置、悬浮球等），是否继续？",
-                            "确认导入", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-                        if (result != DialogResult.Yes) return;
-
-                        File.Copy(dlg.FileName, GetConfigFilePath(), true);
-                        MessageBox.Show("配置已导入，程序将重启以应用新设置。", "导入成功",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                        // 重启应用
-                        exitApp = true;
-                        Application.Restart();
-                    }
-                }
+                refreshTimer.Interval = settings.RefreshInterval * 1000;
             }
-            catch (Exception ex)
+
+            // 悬浮球
+            bool ballChanged = settings.ShowFloatingBall != newSettings.ShowFloatingBall;
+            settings.ShowFloatingBall = newSettings.ShowFloatingBall;
+            if (miToggleFloatingBall != null)
+                miToggleFloatingBall.Checked = settings.ShowFloatingBall;
+            if (ballChanged)
             {
-                MessageBox.Show("导入失败: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (settings.ShowFloatingBall)
+                    ShowFloatingBall();
+                else
+                    HideFloatingBall();
             }
+
+            // 窗口大小
+            settings.WindowWidth = newSettings.WindowWidth;
+            settings.WindowHeight = newSettings.WindowHeight;
+            if (this.WindowState == FormWindowState.Normal)
+            {
+                this.Width = settings.WindowWidth;
+                this.Height = settings.WindowHeight;
+                hiddenLocation = this.Location;
+                hiddenSize = this.Size;
+                hasHiddenState = true;
+            }
+
+            // 保存到文件
+            SaveSettings();
+
+            MessageBox.Show("设置已应用并保存。", "提示",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         /// <summary>
@@ -1540,7 +1558,11 @@ private void ShowMainWindow()
             // 关闭前立即保存（停止防抖定时器，直接写盘）
             moveResizePending = false;
             if (saveDebounceTimer != null) saveDebounceTimer.Stop();
-            SaveSettings();
+            // 导入配置时跳过保存，避免用内存中的旧配置覆盖刚导入的文件
+            if (!skipSaveOnClosing)
+            {
+                SaveSettings();
+            }
 
             // 非用户主动"退出"时，仅隐藏到托盘而不结束程序
             if (!exitApp && e.CloseReason == CloseReason.UserClosing)
