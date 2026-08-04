@@ -233,12 +233,12 @@ namespace DesktopStock
         }
 
         /// <summary>
-        /// 格式化金额：保留两位小数 + 千分位
+        /// 格式化金额：保留三位小数 + 千分位
         /// </summary>
         private string FormatMoney(decimal v)
         {
             string sign = v >= 0 ? "" : "-";
-            return sign + Math.Abs(v).ToString("N2");
+            return sign + Math.Abs(v).ToString("N3");
         }
 
         public void UpdateValues(decimal totalProfit, decimal dailyProfit)
@@ -247,6 +247,8 @@ namespace DesktopStock
             DailyProfit = dailyProfit;
             // 自适应尺寸
             AdjustSizeToContent();
+            // 无论尺寸是否变化，属性已更新，必须重绘才能显示新值
+            this.Invalidate();
         }
 
         /// <summary>

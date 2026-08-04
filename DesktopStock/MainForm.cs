@@ -384,54 +384,64 @@ namespace DesktopStock
             {
                 Text = "90%",
                 Location = new Point(282, 5),
-                Size = new Size(20, 16),
+                Size = new Size(28, 16),
                 TextAlign = ContentAlignment.MiddleCenter,
                 ForeColor = Color.FromArgb(100, 100, 100),
-                Font = new Font("Microsoft YaHei", 8)
+                Font = new Font("Microsoft YaHei", 8),
+                AutoSize = false
             };
 
+            // 统计标签：AutoSize 自适应宽度，避免大数值被截断；位置在刷新时按累加布局
             // 总成本标签
             lblTotalCost = new Label
             {
-                Text = "成本:0",
-                Location = new Point(305, 5),
-                Size = new Size(80, 16),
+                Text = "总成本:0.000",
+                Location = new Point(315, 5),
+                Size = new Size(95, 16),
                 TextAlign = ContentAlignment.MiddleLeft,
                 ForeColor = Color.FromArgb(100, 100, 100),
-                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold)
+                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold),
+                AutoSize = false,
+                MinimumSize = new Size(90, 16)
             };
 
             // 当前总额标签
             lblCurrentTotal = new Label
             {
-                Text = "现额:0",
-                Location = new Point(388, 5),
-                Size = new Size(80, 16),
+                Text = "现总额:0.000",
+                Location = new Point(410, 5),
+                Size = new Size(95, 16),
                 TextAlign = ContentAlignment.MiddleLeft,
                 ForeColor = Color.FromArgb(100, 100, 100),
-                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold)
+                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold),
+                AutoSize = false,
+                MinimumSize = new Size(90, 16)
             };
 
             // 总盈利标签
             lblTotalProfitAmt = new Label
             {
-                Text = "盈利:0",
-                Location = new Point(471, 5),
-                Size = new Size(80, 16),
+                Text = "总盈:0.000",
+                Location = new Point(505, 5),
+                Size = new Size(95, 16),
                 TextAlign = ContentAlignment.MiddleLeft,
                 ForeColor = Color.FromArgb(120, 120, 120),
-                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold)
+                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold),
+                AutoSize = false,
+                MinimumSize = new Size(90, 16)
             };
 
             // 今盈利标签
             lblTotalDailyProfitAmt = new Label
             {
-                Text = "今盈:0",
-                Location = new Point(554, 5),
-                Size = new Size(80, 16),
+                Text = "今盈:0.000",
+                Location = new Point(600, 5),
+                Size = new Size(95, 16),
                 TextAlign = ContentAlignment.MiddleLeft,
                 ForeColor = Color.FromArgb(120, 120, 120),
-                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold)
+                Font = new Font("Microsoft YaHei", 8, FontStyle.Bold),
+                AutoSize = false,
+                MinimumSize = new Size(90, 16)
             };
 
             // 状态标签（右侧）
@@ -542,26 +552,61 @@ namespace DesktopStock
         }
 
         /// <summary>
-        /// 窗口变窄时按优先级隐藏工具栏统计标签（从右到左），
-        /// 避免控件重叠。隐藏顺序：今盈 → 盈利 → 现额 → 成本。
-        /// 左侧输入区（代码/成本价/数量/+ /置顶/透明度）始终保留。
+        /// 根据标签文本自适应宽度，并从左到右按固定间距重新布局统计标签，
+        /// 避免数据上万时文本被截断或重叠。
+        /// </summary>
+        private void LayoutToolbarStats()
+        {
+            if (toolPanel == null) return;
+            var stats = new Label[] { lblTotalCost, lblCurrentTotal, lblTotalProfitAmt, lblTotalDailyProfitAmt };
+            const int gap = 18;      // 标签之间的额外间距
+            const int startX = 315;  // 起始 X（透明度滑块之后）
+            int x = startX;
+            foreach (var lbl in stats)
+            {
+                if (lbl == null) continue;
+                // 临时开启 AutoSize 测量真实宽度
+                lbl.AutoSize = true;
+                int realW = lbl.Width;
+                lbl.AutoSize = false;
+                lbl.Size = new Size(realW, 16);
+                lbl.Location = new Point(x, 5);
+                x += realW + gap;
+            }
+        }
+
+        /// <summary>
+        /// 根据工具栏可用宽度，决定是否显示各统计标签（基于实际布局右边界）。
         /// </summary>
         private void AdjustToolbarVisibility()
         {
             if (toolPanel == null) return;
+            // 先按当前文本重新测量并布局，保证阈值判断基于真实宽度
+            LayoutToolbarStats();
+
             int w = toolPanel.ClientSize.Width;
 
             // 状态标签固定占右侧 48px
-            const int rightReserved = 52;
+            const int rightReserved = 48;
             int available = w - rightReserved;
 
-            // 各统计标签的右边界（绝对坐标）
-            // 今盈: 554+80=634, 盈利: 471+80=551, 现额: 388+80=468, 成本: 305+80=385
-            // 从右到左依次判断：右边界超出可用空间则隐藏
-            lblTotalDailyProfitAmt.Visible = available > 634;
-            lblTotalProfitAmt.Visible = available > 551;
-            lblCurrentTotal.Visible = available > 468;
-            lblTotalCost.Visible = available > 385;
+            // 基于 LayoutToolbarStats 实际布局的右边界动态判断，
+            // 给 6px 余量，避免因边框/缩放导致标签刚好被截断而误隐藏
+            int x = 315;
+            var stats = new Label[] { lblTotalCost, lblCurrentTotal, lblTotalProfitAmt, lblTotalDailyProfitAmt };
+            int[] rightEdges = new int[stats.Length];
+            for (int i = 0; i < stats.Length; i++)
+            {
+                if (stats[i] == null) { rightEdges[i] = x; continue; }
+                rightEdges[i] = x + stats[i].Width;
+                x += stats[i].Width + 18;
+            }
+            int margin = 6;
+            for (int i = 0; i < stats.Length; i++)
+            {
+                if (stats[i] != null)
+                    stats[i].Visible = available > rightEdges[i] + margin;
+            }
         }
 
         /// <summary>
@@ -730,6 +775,7 @@ private void ShowMainWindow()
             }
 
             PerformLayout();
+            AdjustToolbarVisibility();
 
             // 初始化托盘恢复用的位置/大小记录，避免启动后未移动即隐藏时丢失位置
             hiddenLocation = this.Location;
@@ -816,7 +862,7 @@ private void ShowMainWindow()
             var row = stockGridView.Rows[rowIndex];
             row.Cells["colCode"].Value = code;
             row.Cells["colName"].Value = "获取中...";
-            row.Cells["colCostPrice"].Value = costPrice > 0 ? costPrice.ToString("F2") : "";
+            row.Cells["colCostPrice"].Value = costPrice > 0 ? costPrice.ToString("F3") : "";
             row.Cells["colQuantity"].Value = quantity > 0 ? quantity.ToString() : "";
 
             ApplyRowStyle(row, 0, false);
@@ -860,8 +906,8 @@ private void ShowMainWindow()
                     int quantity = config != null ? config.Quantity : 0;
 
                     row.Cells["colName"].Value = info.Name ?? code;
-                    row.Cells["colPrice"].Value = info.Price.ToString("F2");
-                    row.Cells["colChangeAmount"].Value = (info.ChangeAmount >= 0 ? "+" : "") + info.ChangeAmount.ToString("F2");
+                    row.Cells["colPrice"].Value = info.Price.ToString("F3");
+                    row.Cells["colChangeAmount"].Value = (info.ChangeAmount >= 0 ? "+" : "") + info.ChangeAmount.ToString("F3");
                     row.Cells["colChangePercent"].Value = (info.ChangePercent >= 0 ? "+" : "") + info.ChangePercent.ToString("F2") + "%";
 
                     // 计算盈亏
@@ -870,11 +916,11 @@ private void ShowMainWindow()
                         decimal totalProfit = (info.Price - costPrice) * quantity;
                         decimal totalProfitPct = (info.Price - costPrice) / costPrice * 100;
                         row.Cells["colTotalProfitPct"].Value = (totalProfit >= 0 ? "+" : "") + totalProfitPct.ToString("F2") + "%";
-                        row.Cells["colTotalProfitAmt"].Value = (totalProfit >= 0 ? "+" : "") + totalProfit.ToString("N0");
+                        row.Cells["colTotalProfitAmt"].Value = (totalProfit >= 0 ? "+" : "") + totalProfit.ToString("N3");
                         // 成本总额 = 成本价 × 数量
-                        row.Cells["colCostTotal"].Value = (costPrice * quantity).ToString("N0");
+                        row.Cells["colCostTotal"].Value = (costPrice * quantity).ToString("N3");
                         // 当前总额 = 现价 × 数量
-                        row.Cells["colCurrentTotal"].Value = (info.Price * quantity).ToString("N0");
+                        row.Cells["colCurrentTotal"].Value = (info.Price * quantity).ToString("N3");
                     }
                     else
                     {
@@ -888,7 +934,7 @@ private void ShowMainWindow()
                     {
                         decimal dailyProfit = info.ChangeAmount * quantity;
                         row.Cells["colDailyProfitPct"].Value = (info.ChangePercent >= 0 ? "+" : "") + info.ChangePercent.ToString("F2") + "%";
-                        row.Cells["colDailyProfitAmt"].Value = (dailyProfit >= 0 ? "+" : "") + dailyProfit.ToString("N0");
+                        row.Cells["colDailyProfitAmt"].Value = (dailyProfit >= 0 ? "+" : "") + dailyProfit.ToString("N3");
                     }
                     else
                     {
@@ -945,10 +991,10 @@ private void ShowMainWindow()
             // 更新工具栏显示
             if (lblTotalCost != null)
             {
-                lblTotalCost.Text = "成本:" + totalCost.ToString("N0");
-                lblCurrentTotal.Text = "现额:" + totalCurrent.ToString("N0");
-                lblTotalProfitAmt.Text = "盈利:" + (totalProfit >= 0 ? "+" : "") + totalProfit.ToString("N0");
-                lblTotalDailyProfitAmt.Text = "今盈:" + (totalDailyProfit >= 0 ? "+" : "") + totalDailyProfit.ToString("N0");
+                lblTotalCost.Text = "总成本:" + totalCost.ToString("F3");
+                lblCurrentTotal.Text = "现总额:" + totalCurrent.ToString("F3");
+                lblTotalProfitAmt.Text = "总盈:" + (totalProfit >= 0 ? "+" : "") + totalProfit.ToString("F3");
+                lblTotalDailyProfitAmt.Text = "今盈:" + (totalDailyProfit >= 0 ? "+" : "") + totalDailyProfit.ToString("F3");
 
                 // 总盈利颜色
                 if (totalProfit > 0) lblTotalProfitAmt.ForeColor = Color.FromArgb(220, 38, 38);
@@ -959,10 +1005,21 @@ private void ShowMainWindow()
                 if (totalDailyProfit > 0) lblTotalDailyProfitAmt.ForeColor = Color.FromArgb(220, 38, 38);
                 else if (totalDailyProfit < 0) lblTotalDailyProfitAmt.ForeColor = Color.FromArgb(22, 163, 74);
                 else lblTotalDailyProfitAmt.ForeColor = Color.FromArgb(120, 120, 120);
+
+                // 成本/现额颜色：现额 > 成本 = 红，现额 < 成本 = 绿，相等 = 深灰
+                Color costColor = Color.FromArgb(120, 120, 120);
+                if (totalCurrent > totalCost) costColor = Color.FromArgb(220, 38, 38);
+                else if (totalCurrent < totalCost) costColor = Color.FromArgb(22, 163, 74);
+                lblTotalCost.ForeColor = costColor;
+                lblCurrentTotal.ForeColor = costColor;
             }
 
-            // 更新悬浮球（如果已创建）
-            if (floatingBall != null && floatingBall.Visible)
+            // 重新布局统计标签并处理可见性（数据变化时宽度可能变化）
+            AdjustToolbarVisibility();
+
+            // 更新悬浮球（只要已创建就同步最新值，即便当前未显示，
+            // 这样 Show 之前那次 UpdateSummaryStats 也能把值传进去，避免显示 0.00）
+            if (floatingBall != null)
             {
                 floatingBall.UpdateValues(totalProfit, totalDailyProfit);
             }
@@ -970,35 +1027,109 @@ private void ShowMainWindow()
 
         private void ApplyRowStyle(DataGridViewRow row, decimal changeAmount, bool hasData)
         {
-            Color upColor = Color.FromArgb(220, 38, 38);
-            Color downColor = Color.FromArgb(22, 163, 74);
-            Color flatColor = Color.FromArgb(120, 120, 120);
+            Color upColor = Color.FromArgb(220, 38, 38);   // 红（正数）
+            Color downColor = Color.FromArgb(22, 163, 74);  // 绿（负数）
+            Color metaColor = Color.FromArgb(120, 120, 120); // 深灰（代码/名称/0值/配置项）
 
-            Color foreColor = flatColor;
+            // 背景色：整行统一
             Color backColor = Color.White;
-
             if (hasData)
             {
                 if (changeAmount > 0)
-                {
-                    foreColor = upColor;
                     backColor = Color.FromArgb(255, 245, 245);
-                }
                 else if (changeAmount < 0)
-                {
-                    foreColor = downColor;
                     backColor = Color.FromArgb(240, 253, 244);
-                }
             }
-
-            row.DefaultCellStyle.ForeColor = foreColor;
             row.DefaultCellStyle.BackColor = backColor;
 
-            // 特定列着色
-            if (row.Cells["colChangeAmount"] != null)
-                row.Cells["colChangeAmount"].Style.ForeColor = foreColor;
-            if (row.Cells["colChangePercent"] != null)
-                row.Cells["colChangePercent"].Style.ForeColor = foreColor;
+            // 按每个单元格的数值独立设置前景色
+            foreach (DataGridViewCell cell in row.Cells)
+            {
+                string colName = stockGridView.Columns[cell.ColumnIndex].Name;
+
+                // 代码、名称、成本价、数量、成本总额 → 深灰色（元数据/配置列）
+                if (colName == "colCode" || colName == "colName" ||
+                    colName == "colCostPrice" || colName == "colQuantity" ||
+                    colName == "colCostTotal")
+                {
+                    cell.Style.ForeColor = metaColor;
+                    continue;
+                }
+
+                // 没有实时行情 → 全部深灰色
+                if (!hasData)
+                {
+                    cell.Style.ForeColor = metaColor;
+                    continue;
+                }
+
+                string val = cell.Value?.ToString() ?? "";
+
+                // 现价列：根据涨跌方向着色
+                if (colName == "colPrice")
+                {
+                    if (changeAmount > 0)
+                        cell.Style.ForeColor = upColor;
+                    else if (changeAmount < 0)
+                        cell.Style.ForeColor = downColor;
+                    else
+                        cell.Style.ForeColor = metaColor;
+                    continue;
+                }
+
+                // 当前总额列：与成本总额比较着色（大=红、小=绿、等=灰）
+                if (colName == "colCurrentTotal")
+                {
+                    string costText = row.Cells["colCostTotal"].Value?.ToString() ?? "";
+                    string curText = cell.Value?.ToString() ?? "";
+                    string costClean = costText.Replace(",", "").Replace("+", "").Replace("-", "").Trim();
+                    string curClean = curText.Replace(",", "").Replace("+", "").Replace("-", "").Trim();
+                    decimal costVal, curVal;
+                    bool okCost = decimal.TryParse(costClean, out costVal);
+                    bool okCur = decimal.TryParse(curClean, out curVal);
+                    if (!okCost || !okCur)
+                    {
+                        cell.Style.ForeColor = metaColor;
+                    }
+                    else if (curVal > costVal)
+                    {
+                        cell.Style.ForeColor = upColor;
+                    }
+                    else if (curVal < costVal)
+                    {
+                        cell.Style.ForeColor = downColor;
+                    }
+                    else
+                    {
+                        cell.Style.ForeColor = metaColor;
+                    }
+                    continue;
+                }
+
+                // 涨跌/盈亏等带符号列：按数字正负着色
+                if (string.IsNullOrEmpty(val) || val == "--")
+                {
+                    cell.Style.ForeColor = metaColor;
+                }
+                else
+                {
+                    // 去掉百分号、千分位逗号等，尝试解析看是否为零
+                    string cleaned = val.Replace("+", "").Replace("%", "").Replace(",", "").Trim();
+                    decimal numVal;
+                    if (decimal.TryParse(cleaned, out numVal) && numVal == 0)
+                    {
+                        cell.Style.ForeColor = metaColor;
+                    }
+                    else if (val.StartsWith("-"))
+                    {
+                        cell.Style.ForeColor = downColor;
+                    }
+                    else
+                    {
+                        cell.Style.ForeColor = upColor;
+                    }
+                }
+            }
         }
 
         private void StockGridView_ColumnHeaderMouseClick(object sender, DataGridViewCellMouseEventArgs e)
@@ -1103,7 +1234,7 @@ private void ShowMainWindow()
                 if (form.ShowDialog(this) == DialogResult.OK)
                 {
                     stockConfigs[code] = new StockConfig(code, form.CostPrice, form.Quantity);
-                    stockGridView.CurrentRow.Cells["colCostPrice"].Value = form.CostPrice > 0 ? form.CostPrice.ToString("F2") : "";
+                    stockGridView.CurrentRow.Cells["colCostPrice"].Value = form.CostPrice > 0 ? form.CostPrice.ToString("F3") : "";
                     stockGridView.CurrentRow.Cells["colQuantity"].Value = form.Quantity > 0 ? form.Quantity.ToString() : "";
 
                     // 更新盈亏显示
@@ -1116,8 +1247,8 @@ private void ShowMainWindow()
                         // 没有实时行情也要更新总额显示
                         if (form.CostPrice > 0 && form.Quantity > 0)
                         {
-                            stockGridView.CurrentRow.Cells["colCostTotal"].Value = (form.CostPrice * form.Quantity).ToString("N0");
-                            stockGridView.CurrentRow.Cells["colCurrentTotal"].Value = (form.CostPrice * form.Quantity).ToString("N0");
+                            stockGridView.CurrentRow.Cells["colCostTotal"].Value = (form.CostPrice * form.Quantity).ToString("N3");
+                            stockGridView.CurrentRow.Cells["colCurrentTotal"].Value = (form.CostPrice * form.Quantity).ToString("N3");
                         }
                         else
                         {
@@ -1515,9 +1646,6 @@ private void ShowMainWindow()
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            // 标记关闭中，阻止异步刷新修改集合
-            shuttingDown = true;
-
             try
             {
                 // 关闭前立即保存（停止防抖定时器，直接写盘）
@@ -1528,6 +1656,9 @@ private void ShowMainWindow()
                 {
                     SaveSettings();
                 }
+
+                // 标记关闭中，阻止异步刷新修改集合（必须在保存配置之后设置）
+                shuttingDown = true;
 
                 // 非用户主动"退出"时，仅隐藏到托盘而不结束程序
                 if (!exitApp && e.CloseReason == CloseReason.UserClosing)
